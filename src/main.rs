@@ -4,7 +4,7 @@ use std::io::{self, prelude::*};
 use std::{
     collections::BTreeMap,
     fs::{self, File},
-    io::{BufRead, BufReader},
+    io::BufRead,
 };
 
 struct Stats {
@@ -16,20 +16,26 @@ struct Stats {
 
 const CHUNK_COUNT: u64 = 8;
 
-fn main() {
-    let path = "../../java/1brc/measurements_small.txt";
-
+fn main() -> io::Result<()> {
+    let path = "../../java/1brc/measurements-1b.txt";
     let fsize = fs::metadata(path).unwrap().len();
-    let mut reader = BufReader::new(File::open(path).unwrap());
-    let mut chunk_start_offsets = [0u64; CHUNK_COUNT as usize];
-    let mut buf = Vec::with_capacity(32);
-    for chunk_index in 1..CHUNK_COUNT {
-        let chunk_start = fsize * chunk_index / CHUNK_COUNT;
-        reader.seek(io::SeekFrom::Start(chunk_start)).unwrap();
-        buf.clear();
-        let count = reader.read_until(b'\n', &mut buf).unwrap() as u64;
-        chunk_start_offsets[chunk_index as usize] = chunk_start + count;
-    }
+
+    let chunk_start_offsets = {
+        let mut f = File::open(path)?;
+        let mut chunk_start_offsets = [0u64; CHUNK_COUNT as usize];
+        for chunk_index in 1..CHUNK_COUNT {
+            let chunk_start = fsize * chunk_index / CHUNK_COUNT;
+            f.seek(io::SeekFrom::Start(chunk_start))?;
+            let newline_pos = f
+                .try_clone()?
+                .bytes()
+                .enumerate()
+                .find_map(|(i, b)| (b.unwrap() == b'\n').then_some(i as u64))
+                .unwrap();
+            chunk_start_offsets[chunk_index as usize] = chunk_start + newline_pos + 1;
+        }
+        chunk_start_offsets
+    };
     let mut chunks = Vec::new();
     for i in 0..chunk_start_offsets.len() {
         let chunk_start = chunk_start_offsets[i];
@@ -38,33 +44,32 @@ fn main() {
         } else {
             fsize
         };
-        let mut f = fs::File::open(&path).unwrap();
-        f.seek(io::SeekFrom::Start(chunk_start)).unwrap();
+        let mut f = fs::File::open(&path)?;
+        f.seek(io::SeekFrom::Start(chunk_start))?;
         let chunk = io::BufReader::new(f.take(chunk_end - chunk_start));
         chunks.push(chunk);
     }
 
     let stats = chunks
-        .iter_mut()
+        .par_iter_mut()
         .map(|reader| {
-            println!("start chunk");
             let mut name_buf = Vec::with_capacity(32);
             let mut val_buf = Vec::with_capacity(32);
-
             let mut stats =
                 FxHashMap::<Vec<u8>, Stats>::with_capacity_and_hasher(1024, Default::default());
             loop {
                 name_buf.clear();
-                val_buf.clear();
                 if reader.read_until(b';', &mut name_buf).unwrap() == 0 {
                     break;
                 }
                 name_buf.pop();
+
+                val_buf.clear();
                 if reader.read_until(b'\n', &mut val_buf).unwrap() == 0 {
-                    println!("name_buf {:?}", name_buf);
-                    panic!("name without value");
+                    panic!("name without value: {name_buf:?}");
                 }
                 val_buf.pop();
+
                 let temperature: f32 = (&String::from_utf8_lossy(&val_buf)).parse().unwrap();
                 if let Some(Stats { count, sum, min, max }) = stats.get_mut(&name_buf) {
                     *count += 1;
@@ -85,27 +90,31 @@ fn main() {
             }
             stats
         })
-        .reduce(|mut totals, stats| {
-            for (city, city_stats) in stats {
-                let Stats { count, sum, min, max } = city_stats;
-                if let Some(Stats {
-                    count: total_count,
-                    sum: total_sum,
-                    min: total_min,
-                    max: total_max,
-                }) = totals.get_mut(&city)
-                {
-                    *total_count += count;
-                    *total_sum += sum;
-                    *total_min = total_min.min(min);
-                    *total_max = total_max.max(max);
-                } else {
-                    totals.insert(city, city_stats);
+        .reduce(
+            || FxHashMap::<Vec<u8>, Stats>::with_capacity_and_hasher(1024, Default::default()),
+            |mut totals, stats| {
+                for (city, city_stats) in stats {
+                    let Stats { count, sum, min, max } = city_stats;
+                    totals
+                        .entry(city)
+                        .and_modify(
+                            |Stats {
+                                 count: total_count,
+                                 sum: total_sum,
+                                 min: total_min,
+                                 max: total_max,
+                             }| {
+                                *total_count += count;
+                                *total_sum += sum;
+                                *total_min = total_min.min(min);
+                                *total_max = total_max.max(max);
+                            },
+                        )
+                        .or_insert(city_stats);
                 }
-            }
-            totals
-        })
-        .unwrap();
+                totals
+            },
+        );
 
     let mut sorted = BTreeMap::new();
     sorted.extend(stats);
@@ -127,4 +136,5 @@ fn main() {
         );
     }
     println!("}}");
+    Ok(())
 }
