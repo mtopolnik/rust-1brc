@@ -1,5 +1,5 @@
 [package]
-name = "billion-row-challenge"
+name = "rust-1brc"
 version = "0.1.0"
 edition = "2021"
 
