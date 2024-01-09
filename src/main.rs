@@ -226,7 +226,7 @@ fn parse_temperature_swar(chars: &[u8]) -> (i16, usize) {
     signed = signed.shr(63);
     let remove_sign_mask = !(signed & 0xFF);
     let digits = (word & remove_sign_mask).shl(28 - dot_pos) & 0x0F000F0F00;
-    let abs_value = (digits * 0x640a0001).shr(32) & 0x3FFi64;
+    let abs_value = (digits.wrapping_mul(0x640a0001)).shr(32) & 0x3FFi64;
     let temperature = (abs_value ^ signed) - signed;
     (temperature as i16, (dot_pos / 8 + 3) as usize)
 }
