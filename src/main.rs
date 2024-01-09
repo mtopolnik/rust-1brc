@@ -7,6 +7,7 @@ use std::ops::{Shl, Shr};
 use std::{array, io};
 use std::{collections::BTreeMap, fs::File};
 
+#[repr(C, align(64))]
 struct Stats {
     hash: u64,
     name_len: u32,
