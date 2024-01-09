@@ -39,7 +39,7 @@ struct FinalStats {
 }
 
 fn main() -> io::Result<()> {
-    let path = "../../java/1brc/measurements.txt";
+    let path = "measurements.txt";
     let chunk_count: usize = std::thread::available_parallelism().unwrap().into();
     let file = File::open(path).unwrap();
     let mmap = unsafe { MmapOptions::new().map(&file).unwrap() };
