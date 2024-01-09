@@ -20,13 +20,13 @@ struct Stats {
 impl Default for Stats {
     fn default() -> Self {
         Self {
+            name: array::from_fn(|_| 0u8),
             hash: Default::default(),
             count: Default::default(),
             sum: Default::default(),
             min: Default::default(),
             max: Default::default(),
             name_len: Default::default(),
-            name: array::from_fn(|_| 0u8),
         }
     }
 }
@@ -63,7 +63,9 @@ fn main() -> io::Result<()> {
         } else {
             fsize
         };
-        chunks.push((chunk_start, chunk_end));
+        if chunk_start < chunk_end {
+            chunks.push((chunk_start, chunk_end));
+        }
     }
 
     const HASHTABLE_SIZE: usize = 32_768;
@@ -75,19 +77,24 @@ fn main() -> io::Result<()> {
             for _ in 0..HASHTABLE_SIZE {
                 hashtable.push(Stats::default());
             }
-            let mut record = &mmap[start..limit];
+            let mut record_tail = &mmap[start..limit];
             loop {
-                let pos_of_semicolon = record.find_byte(b';').unwrap();
-                let name = &record[..pos_of_semicolon];
-                let hash = hash(record, pos_of_semicolon);
-                let temperature_field = &record[pos_of_semicolon + 1..];
-                let (temperature, pos_of_next_line) = parse_temperature(temperature_field);
+                let pos_of_semicolon = record_tail.find_byte(b';');
+                if pos_of_semicolon.is_none() {
+                    println!("record tail len {}", record_tail.len());
+                }
+                let pos_of_semicolon = pos_of_semicolon.unwrap();
+                let name = &record_tail[..pos_of_semicolon];
+                let hash = hash(record_tail, pos_of_semicolon);
+                let temperature_tail = &record_tail[pos_of_semicolon + 1..];
+                let (temperature, pos_of_next_line) = parse_temperature(temperature_tail);
                 let mut hashtable_index = hash as usize % HASHTABLE_SIZE;
                 loop {
                     let stats = &mut hashtable[hashtable_index];
+                    let name_len = stats.name_len as usize;
                     if stats.hash == hash
-                        && stats.name_len as usize == name.len()
-                        && &stats.name[..name.len()] == name
+                        && name_len == name.len()
+                        && &stats.name[..name_len] == name
                     {
                         stats.count += 1;
                         stats.sum += temperature as i32;
@@ -108,10 +115,10 @@ fn main() -> io::Result<()> {
                     stats.name[..name.len()].copy_from_slice(name);
                     break;
                 }
-                if pos_of_next_line >= temperature_field.len() {
+                if pos_of_next_line >= temperature_tail.len() {
                     break;
                 }
-                record = &temperature_field[pos_of_next_line..];
+                record_tail = &temperature_tail[pos_of_next_line..];
             }
             hashtable
         })
@@ -125,19 +132,12 @@ fn main() -> io::Result<()> {
                     let Stats { name_len, name, count, sum, min, max, .. } = stats;
                     totals
                         .entry(String::from_utf8_lossy(&name[..name_len as usize]).into_owned())
-                        .and_modify(
-                            |FinalStats {
-                                 count: total_count,
-                                 sum: total_sum,
-                                 min: total_min,
-                                 max: total_max,
-                             }| {
-                                *total_count += count;
-                                *total_sum += sum;
-                                *total_min = (*total_min).min(min);
-                                *total_max = (*total_max).max(max);
-                            },
-                        )
+                        .and_modify(|totals| {
+                            totals.count += count;
+                            totals.sum += sum;
+                            totals.min = (totals.min).min(min);
+                            totals.max = (totals.max).max(max);
+                        })
                         .or_insert(FinalStats { count, sum, min, max });
                 }
                 totals
@@ -149,19 +149,12 @@ fn main() -> io::Result<()> {
                 for (name, FinalStats { count, sum, min, max }) in stats_map {
                     totals
                         .entry(name)
-                        .and_modify(
-                            |FinalStats {
-                                 count: total_count,
-                                 sum: total_sum,
-                                 min: total_min,
-                                 max: total_max,
-                             }| {
-                                *total_count += count;
-                                *total_sum += sum;
-                                *total_min = (*total_min).min(min);
-                                *total_max = (*total_max).max(max);
-                            },
-                        )
+                        .and_modify(|totals| {
+                            totals.count += count;
+                            totals.sum += sum;
+                            totals.min = (totals.min).min(min);
+                            totals.max = (totals.max).max(max);
+                        })
                         .or_insert(FinalStats { count, sum, min, max });
                 }
                 totals
@@ -198,6 +191,7 @@ fn hash(name: &[u8], pos_of_semicolon: usize) -> u64 {
     let block = if name.len() >= 8 {
         let block = u64::from_le_bytes(name[0..8].try_into().unwrap());
         let shift_distance = 8 * 0.max(8 - pos_of_semicolon as i32);
+        // Mask out bytes not belonging to name
         let mask = (!0u64).shr(shift_distance);
         block & mask
     } else {
@@ -209,7 +203,6 @@ fn hash(name: &[u8], pos_of_semicolon: usize) -> u64 {
     let mut hash = block;
     hash = hash.wrapping_mul(seed);
     hash = hash.rotate_left(rot_dist);
-    hash &= !(1u64.shl(u64::BITS - 1));
     if hash != 0 {
         hash
     } else {
