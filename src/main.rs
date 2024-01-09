@@ -80,11 +80,7 @@ fn main() -> io::Result<()> {
             }
             let mut record_tail = &mmap[start..limit];
             loop {
-                let pos_of_semicolon = record_tail.find_byte(b';');
-                if pos_of_semicolon.is_none() {
-                    println!("record tail len {}", record_tail.len());
-                }
-                let pos_of_semicolon = pos_of_semicolon.unwrap();
+                let pos_of_semicolon = record_tail.find_byte(b';').unwrap();
                 let name = &record_tail[..pos_of_semicolon];
                 let hash = hash(record_tail, pos_of_semicolon);
                 let temperature_tail = &record_tail[pos_of_semicolon + 1..];
