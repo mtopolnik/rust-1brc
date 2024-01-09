@@ -181,12 +181,12 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn hash(name: &[u8], pos_of_semicolon: usize) -> u64 {
+fn hash(name_tail: &[u8], pos_of_semicolon: usize) -> u64 {
     let seed: u64 = 0x51_7c_c1_b7_27_22_0a_95;
     let rot_dist = 17;
 
-    let block = if name.len() >= 8 {
-        let block = u64::from_le_bytes(name[0..8].try_into().unwrap());
+    let block = if name_tail.len() >= 8 {
+        let block = u64::from_le_bytes(name_tail[0..8].try_into().unwrap());
         let shift_distance = 8 * 0.max(8 - pos_of_semicolon as i32);
         // Mask out bytes not belonging to name
         let mask = (!0u64).shr(shift_distance);
@@ -194,7 +194,7 @@ fn hash(name: &[u8], pos_of_semicolon: usize) -> u64 {
     } else {
         let mut buf = [0u8; 8];
         let copy_len = pos_of_semicolon.min(8);
-        buf[..copy_len].copy_from_slice(&name[..copy_len]);
+        buf[..copy_len].copy_from_slice(&name_tail[..copy_len]);
         u64::from_le_bytes(buf)
     };
     let mut hash = block;
