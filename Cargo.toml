@@ -3,11 +3,15 @@ name = "rust-1brc"
 version = "0.1.0"
 edition = "2021"
 
-[profile.release]
-debug = false
-
 [dependencies]
 rayon = "1.8"
 bstr = "1.9.0"
 memchr = "2.7.1"
 memmap = "0.7.0"
+
+[profile.release]
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
