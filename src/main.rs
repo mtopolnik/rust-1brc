@@ -51,7 +51,7 @@ fn main() -> io::Result<()> {
         chunk_start_offsets.push(0);
         for chunk_index in 1..chunk_count {
             let chunk_start = fsize * chunk_index / chunk_count;
-            let newline_pos = memchr::memchr(b'\n', &mmap[chunk_start..]).unwrap();
+            let newline_pos = &mmap[chunk_start..].find_byte(b'\n').unwrap();
             chunk_start_offsets.push(chunk_start + newline_pos + 1);
         }
         chunk_start_offsets
