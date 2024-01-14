@@ -99,7 +99,7 @@ fn main() -> io::Result<()> {
                         stats.max = stats.max.max(temperature);
                         break;
                     }
-                    if stats.hash != 0 {
+                    if stats.name_len != 0 {
                         hashtable_index = (hashtable_index + 1) % HASHTABLE_SIZE;
                         continue;
                     }
@@ -123,7 +123,7 @@ fn main() -> io::Result<()> {
             || HashMap::<String, FinalStats>::with_capacity(16_384),
             |mut totals, hashtable| {
                 for stats in hashtable {
-                    if stats.hash == 0 {
+                    if stats.name_len == 0 {
                         continue;
                     }
                     let Stats { name_len, name, count, sum, min, max, .. } = stats;
@@ -200,11 +200,7 @@ fn hash(name_tail: &[u8], pos_of_semicolon: usize) -> u64 {
     let mut hash = block;
     hash = hash.wrapping_mul(seed);
     hash = hash.rotate_left(rot_dist);
-    if hash != 0 {
-        hash
-    } else {
-        1
-    }
+    hash
 }
 
 fn parse_temperature(chars: &[u8]) -> (i16, usize) {
